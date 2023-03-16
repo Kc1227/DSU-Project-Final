@@ -1,0 +1,487 @@
+---
+title: "Poker Hand Analysis Project"
+author: "Casey Tattersall"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: 
+    toc: yes
+---
+
+#### Imports
+
+```{r message = FALSE}
+library(tidyverse)
+source("EDA_Script.R")
+hands <- str_split(read_file("All_Hands.txt"), pattern = "\r\n\r\n\r\n")[[1]]
+length(hands)
+```
+
+## Example Hand
+
+```{r}
+cat(hands[1652])
+```
+
+## Regex Example: Find Opener
+
+```{r}
+str_match(str_match(hands[1652], "\\*\\*\\* HOLE CARDS \\*\\*\\*([^\\*]+)\\*")[2], 
+          "([^\r\n\\[\\]]{3,11}) (?: \\[ME\\] )?: (?:Raises|All\\-in)")[2]
+```
+## Class Generation Example
+
+```{r}
+x <- Hand$new(hands[1652])
+
+## Store all players in the hand:
+x$players_in_hand
+
+## We can reference individual players by their position, or directly call Hero (same exact Player object either way)
+
+x$Hero
+
+x$BTN
+
+## We can then view and change the information of each Player object through the Hand object. After extracting the relevant info using regex, we then store it using this notation.
+
+x$Hero$hand
+
+x$Hero$chips_won
+```
+
+## Moving Data Into DataFrame
+
+```{r}
+## We can get our data into a dataframe by looping over all hands in our dataset, generating a new Hand class, and extracting our relevant into from the class into the dataframe, like so:
+
+data <- data.frame('Hand_Number' = character(0), 'Position' = character(0), 'Hand' = character(0), "Chips_Won" = character(0), "Preflop" = character(0), "Hero" = character(0))
+
+for(hand in hands){
+  x <- Hand$new(hand)
+  
+  for(i in seq_len(x$num_players)){
+    player <- x$players_in_hand[[i]]
+    
+    if(player$preflop == "Opened"){
+      pre_action <- "Opened"
+    } else if (player$preflop == "Limped"){
+      pre_action <- "Limped"
+    } else if (player$preflop == "Folded before open"){
+      pre_action <- "Folded"
+    } else {
+      pre_action <- NA
+    }
+    
+    data[dim(data)[1]+1,] <- c(x$hand_number, player$position, player$hand, player$chips_change, pre_action, player$hero)
+  }
+}
+
+```
+
+#### Filtering Data
+
+```{r}
+## We can sort our hands in the following order - this will be useful for visualizations later.
+order <- c("AA", "AKs", "AQs", "AJs", "ATs", "A9s", "A8s", "A7s", "A6s", "A5s", "A4s", "A3s", "A2s",
+           "AKo", "KK", "KQs", "KJs", "KTs", "K9s", "K8s", "K7s", "K6s", "K5s", "K4s", "K3s", "K2s",
+           "AQo", "KQo", "QQ", "QJs", "QTs", "Q9s", "Q8s", "Q7s", "Q6s", "Q5s", "Q4s", "Q3s", "Q2s",
+           "AJo", "KJo", "QJo", "JJ", "JTs", "J9s", "J8s", "J7s", "J6s", "J5s", "J4s", "J3s", "J2s",
+           "ATo", "KTo", "QTo", "JTo", "TT", "T9s", "T8s", "T7s", "T6s", "T5s", "T4s", "T3s", "T2s",
+           "A9o", "K9o", "Q9o", "J9o", "T9o", "99", "98s", "97s", "96s", "95s", "94s", "93s", "92s",
+           "A8o", "K8o", "Q8o", "J8o", "T8o", "98o", "88", "87s", "86s", "85s", "84s", "83s", "82s",
+           "A7o", "K7o", "Q7o", "J7o", "T7o", "97o", "87o", "77", "76s", "75s", "74s", "73s", "72s",
+           "A6o", "K6o", "Q6o", "J6o", "T6o", "96o", "86o", "76o", "66", "65s", "64s", "63s", "62s",
+           "A5o", "K5o", "Q5o", "J5o", "T5o", "95o", "85o", "75o", "65o", "55", "54s", "53s", "52s",
+           "A4o", "K4o", "Q4o", "J4o", "T4o", "94o", "84o", "74o", "64o", "54o", "44", "43s", "42s",
+           "A3o", "K3o", "Q3o", "J3o", "T3o", "93o", "83o", "73o", "63o", "53o", "43o", "33", "32s",
+           "A2o", "K2o", "Q2o", "J2o", "T2o", "92o", "82o", "72o", "62o", "52o", "42o", "32o", "22")
+
+
+
+## We can now sort through this dataframe to only look at specific scenarios (i.e. someone in early position opened):
+
+early_open <- data %>% filter(Position %in% c("UTG", "UTG+1", "UTG+2"), !is.na(Preflop))
+early_open
+
+## We can filter further to separate my hands and my opponents' hands, and summarize some of the results:
+
+early_open_data_hero <- early_open %>% filter(Hero == TRUE) %>% group_by(Hand) %>% 
+  summarise("Hands" = n(), "Opened" = sum(Preflop == "Opened")/sum(!is.na(Preflop)), "Limped" = sum(Preflop == "Limped")/sum(!is.na(Preflop)), "Folded" = sum(Preflop == "Folded")/sum(!is.na(Preflop)),
+            "Chips Won" = sum(as.numeric(Chips_Won))) %>% group_by(Hand) %>% mutate("Order" = which(order == Hand)) %>% arrange(Order)
+
+early_open_data_villain <- early_open %>% filter(Hero == FALSE) %>% group_by(Hand) %>% 
+  summarise("Hands" = n(), "Opened" = sum(Preflop == "Opened")/sum(!is.na(Preflop)), "Limped" = sum(Preflop == "Limped")/sum(!is.na(Preflop)), "Folded" = sum(Preflop == "Folded")/sum(!is.na(Preflop)),
+            "Chips Won" = sum(as.numeric(Chips_Won))) %>% group_by(Hand) %>% mutate("Order" = which(order == Hand)) %>% arrange(Order)
+
+early_open_data_villain
+```
+
+## Visualizations
+
+We will use the traditional 13x13 grid to represent all possible poker hands. See the slides for an example of this using GTOWizard.
+
+#### My hands, EP open:
+
+```{r fig.height = 6}
+par(mar = c(0, 0, 0, 0)) 
+options(repr.plot.width=32, repr.plot.height=32)
+plot.new()
+plot.window(xlim = c(0, 13), ylim = c(0, 13), asp = 1)
+
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    
+        info <- early_open_data_hero %>% group_by(Order) %>% filter(Hand == order[idx]) %>% select(Opened, Limped, Folded, Order) 
+        opened_freq <- info[[1]]
+        limped_freq <- info[[2]]
+        folded_freq <- info[[3]]
+        
+        idx <- idx + 1
+        
+    tryCatch(
+      {
+        rect(xleft = column, xright = column + opened_freq, ybottom = row - 1, ytop = row, col = rgb(240/255, 60/255, 60/255), border = NA)
+        rect(xleft = column + opened_freq, xright = column + opened_freq + limped_freq, ybottom = row - 1, ytop = row, col = rgb(90/255, 185/255, 102/255), border = NA)
+        rect(xleft = column + opened_freq + limped_freq, xright = column + opened_freq + limped_freq + folded_freq, ybottom = row - 1, ytop = row, col = rgb(61/255, 124/255, 184/255), border = NA)
+      },
+        error = function(e){
+        rect(xleft = column, xright = column + 1, ybottom = row - 1, ytop = row, col = rgb(1, 1, 1), border = NA)
+      }
+    )
+        
+  }
+}
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    text(column - 0.1, row - 0.2, order[idx], pos = 4)
+    idx <- idx + 1
+  }
+}
+
+for(i in 0:13){
+  segments(i, 0, i, 13)
+  segments(0, i, 13, i)
+}
+```
+
+
+
+#### Opponent's hands, EP open:
+
+```{r, fig.height = 6}
+par(mar = c(0, 0, 0, 0)) 
+options(repr.plot.width=32, repr.plot.height=32)
+plot.new()
+plot.window(xlim = c(0, 13), ylim = c(0, 13), asp = 1)
+
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    
+        info <- early_open_data_villain %>% group_by(Order) %>% filter(Hand == order[idx]) %>% select(Opened, Limped, Folded, Order) 
+        opened_freq <- info[[1]]
+        limped_freq <- info[[2]]
+        folded_freq <- info[[3]]
+        
+        idx <- idx + 1
+        
+    tryCatch(
+      {
+        rect(xleft = column, xright = column + opened_freq, ybottom = row - 1, ytop = row, col = rgb(240/255, 60/255, 60/255), border = NA)
+        rect(xleft = column + opened_freq, xright = column + opened_freq + limped_freq, ybottom = row - 1, ytop = row, col = rgb(90/255, 185/255, 102/255), border = NA)
+        rect(xleft = column + opened_freq + limped_freq, xright = column + opened_freq + limped_freq + folded_freq, ybottom = row - 1, ytop = row, col = rgb(61/255, 124/255, 184/255), border = NA)
+      },
+        error = function(e){
+        rect(xleft = column, xright = column + 1, ybottom = row - 1, ytop = row, col = rgb(1, 1, 1), border = NA)
+      }
+    )
+        
+  }
+}
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    text(column - 0.1, row - 0.2, order[idx], pos = 4)
+    idx <- idx + 1
+  }
+}
+
+for(i in 0:13){
+  segments(i, 0, i, 13)
+  segments(0, i, 13, i)
+}
+```
+
+#### My hands, Late open:
+
+Limited sample size is really showing here, as lots of hands were never dealt to me in this position in the sample. This problem isn't present in the opponents visualization, which is about 4 times larger (as we're playing a 6 handed game, with the table not always being full).
+
+```{r fig.height = 6}
+par(mar = c(0, 0, 0, 0)) 
+options(repr.plot.width=32, repr.plot.height=32)
+plot.new()
+plot.window(xlim = c(0, 13), ylim = c(0, 13), asp = 1)
+
+late_open <- data %>% filter(Position %in% c("UTG+2", "Dealer"), !is.na(Preflop))
+
+late_open_data <- late_open %>% filter(Hero == TRUE) %>% group_by(Hand) %>% 
+  summarise("Hands" = n(), "Opened" = sum(Preflop == "Opened")/sum(!is.na(Preflop)), "Limped" = sum(Preflop == "Limped")/sum(!is.na(Preflop)), "Folded" = sum(Preflop == "Folded")/sum(!is.na(Preflop)),
+            "Chips Won" = sum(as.numeric(Chips_Won))) %>% group_by(Hand) %>% mutate("Order" = which(order == Hand)) %>% arrange(Order)
+
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    
+        info <- late_open_data %>% group_by(Order) %>% filter(Hand == order[idx]) %>% select(Opened, Limped, Folded, Order) 
+        opened_freq <- info[[1]]
+        limped_freq <- info[[2]]
+        folded_freq <- info[[3]]
+        
+        idx <- idx + 1
+        
+    tryCatch(
+      {
+        rect(xleft = column, xright = column + opened_freq, ybottom = row - 1, ytop = row, col = rgb(240/255, 60/255, 60/255), border = NA)
+        rect(xleft = column + opened_freq, xright = column + opened_freq + limped_freq, ybottom = row - 1, ytop = row, col = rgb(90/255, 185/255, 102/255), border = NA)
+        rect(xleft = column + opened_freq + limped_freq, xright = column + opened_freq + limped_freq + folded_freq, ybottom = row - 1, ytop = row, col = rgb(61/255, 124/255, 184/255), border = NA)
+      },
+        error = function(e){
+        rect(xleft = column, xright = column + 1, ybottom = row - 1, ytop = row, col = rgb(1, 1, 1), border = NA)
+      }
+    )
+        
+  }
+}
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    text(column - 0.1, row - 0.2, order[idx], pos = 4)
+    idx <- idx + 1
+  }
+}
+
+for(i in 0:13){
+  segments(i, 0, i, 13)
+  segments(0, i, 13, i)
+}
+
+idx <- 1
+
+```
+
+#### Opponent's Hands, Late Open
+
+```{r fig.height = 6}
+library(tidyverse)
+hands <- str_split(read_file('All_Hands.txt'), pattern = "\r\n\r\n\r\n")[[1]]
+source('EDA_script.R')
+
+
+
+par(mar = c(0, 0, 0, 0)) 
+options(repr.plot.width=32, repr.plot.height=32)
+plot.new()
+plot.window(xlim = c(0, 13), ylim = c(0, 13), asp = 1)
+
+
+
+
+late_open <- data %>% filter(Position %in% c("UTG+2", "Dealer"), !is.na(Preflop))
+
+late_open_data <- late_open %>% filter(Hero == FALSE) %>% group_by(Hand) %>% 
+  summarise("Hands" = n(), "Opened" = sum(Preflop == "Opened")/sum(!is.na(Preflop)), "Limped" = sum(Preflop == "Limped")/sum(!is.na(Preflop)), "Folded" = sum(Preflop == "Folded")/sum(!is.na(Preflop)),
+            "Chips Won" = sum(as.numeric(Chips_Won))) %>% group_by(Hand) %>% mutate("Order" = which(order == Hand)) %>% arrange(Order)
+
+
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    info <- late_open_data %>% group_by(Order) %>% filter(Hand == order[idx]) %>% select(Opened, Limped, Folded, Order) 
+    opened_freq <- info[[1]]
+    limped_freq <- info[[2]]
+    folded_freq <- info[[3]]
+    
+
+    
+    rect(xleft = column, xright = column + opened_freq, ybottom = row - 1, ytop = row, col = rgb(240/255, 60/255, 60/255), border = NA)
+    rect(xleft = column + opened_freq, xright = column + opened_freq + limped_freq, ybottom = row - 1, ytop = row, col = rgb(90/255, 185/255, 102/255), border = NA)
+    rect(xleft = column + opened_freq + limped_freq, xright = column + opened_freq + limped_freq + folded_freq, ybottom = row - 1, ytop = row, col = rgb(61/255, 124/255, 184/255), border = NA)
+    idx <- idx + 1
+  }
+}
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    text(column - 0.1, row - 0.2, order[idx], pos = 4)
+    idx <- idx + 1
+  }
+}
+
+for(i in 0:13){
+  segments(i, 0, i, 13)
+  segments(0, i, 13, i)
+}
+
+idx <- 1
+#late_open_data %>% group_by(Order) %>% filter(Order == order[idx]) %>% select(Opened, Limped, Folded, Order) 
+
+
+
+```
+
+#### My Hands, Chips Won in Early Position:
+
+Again, heavily affected by small sample size.
+
+```{r}
+results1 <- data.frame('Hand Number' = character(0), 'Hand' = character(0), 'Position' = character(0), 'Chips Won' = numeric(0), 'Hero' = character(0))
+
+for(i in seq_along(hands)){
+  x <- Hand$new(hands[i])
+  
+  for(j in seq_len(x$num_players)){
+    p <- x$players_in_hand[[j]]
+    results1[dim(results1)[1] + 1, ] <- c(x$hand_number, p$hand, p$position, 1, p$hero)
+    results1[dim(results1)[1], 4] <- as.numeric(p$chips_change)
+  }
+}
+
+results1$Chips.Won <- as.numeric(results1$Chips.Won)
+
+```
+
+
+```{r fig.height = 6}
+results_hero <- tibble(results1) %>% filter(Hero == TRUE) %>% group_by(Hand) %>% summarise('Hands' = n(), 'Net.Chips.Won' = sum(Chips.Won), "Avg.Chips.Won" = sum(Chips.Won) / n()) %>% group_by(Hand) %>% mutate("Order" = which(order == Hand)) %>% arrange(Order) 
+
+max_value_hero <- max(abs(results_hero['Avg.Chips.Won']))
+
+
+par(mar = c(0, 0, 0, 0)) 
+options(repr.plot.width=32, repr.plot.height=32)
+plot.new()
+plot.window(xlim = c(0, 13), ylim = c(0, 13), asp = 1)
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+        
+    tryCatch(
+      {
+        cor_row <- results_hero %>% filter(Hand == order[idx])
+        info <- cor_row['Avg.Chips.Won']
+        
+        if(info > 1){
+          info <- 1
+        }
+        if(info < -1){
+          info <- -1
+        }
+        
+        
+        if(info < 0){
+          rect(xleft = column, xright = column + 1, ybottom = row - 1, ytop = row, col = rgb(240/255, 60/255, 60/255, -1 * info), border = NA)
+        } else {
+          rect(xleft = column, xright = column + 1, ybottom = row - 1, ytop = row, col = rgb(90/255, 185/255, 102/255, info), border = NA)
+        }
+      },
+        error = function(e){
+        rect(xleft = column, xright = column + 1, ybottom = row - 1, ytop = row, col = rgb(1, 1, 1), border = NA)
+        }
+    )
+    idx <- idx + 1 
+  }
+}
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    text(column - 0.1, row - 0.2, order[idx], pos = 4)
+    idx <- idx + 1
+  }
+}
+
+for(i in 0:13){
+  segments(i, 0, i, 13)
+  segments(0, i, 13, i)
+}
+
+(results_hero %>% arrange(Avg.Chips.Won))[1:5,]
+(results_hero %>% arrange(desc(Avg.Chips.Won)))[1:5,]
+```
+
+#### Opponent's hands, Chips Won, Late Position
+
+```{r fig.height = 6}
+results_villain <- tibble(results1) %>% filter(Hero == FALSE) %>% group_by(Hand) %>% summarise('Hands' = n(), 'Net.Chips.Won' = sum(Chips.Won), "Avg.Chips.Won" = sum(Chips.Won) / n()) %>% group_by(Hand) %>% mutate("Order" = which(order == Hand)) %>% arrange(Order) 
+
+max_value_villain <- max(abs(results_villain['Avg.Chips.Won']))
+
+
+par(mar = c(0, 0, 0, 0)) 
+options(repr.plot.width=32, repr.plot.height=32)
+plot.new()
+plot.window(xlim = c(0, 13), ylim = c(0, 13), asp = 1)
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+        
+    tryCatch(
+      {
+        cor_row <- results_villain %>% filter(Hand == order[idx])
+        info <- cor_row['Avg.Chips.Won']
+        
+        if(info > 1){
+          info <- 1
+        }
+        if(info < -1){
+          info <- -1
+        }
+        
+        
+        if(info < 0){
+          rect(xleft = column, xright = column + 1, ybottom = row - 1, ytop = row, col = rgb(240/255, 60/255, 60/255, -1 * info), border = NA)
+        } else {
+          rect(xleft = column, xright = column + 1, ybottom = row - 1, ytop = row, col = rgb(90/255, 185/255, 102/255, info), border = NA)
+        }
+      },
+        error = function(e){
+        rect(xleft = column, xright = column + 1, ybottom = row - 1, ytop = row, col = rgb(1, 1, 1), border = NA)
+        }
+    )
+    idx <- idx + 1 
+  }
+}
+
+idx <- 1
+for(row in 13:1){
+  for(column in 0:12){
+    text(column - 0.1, row - 0.2, order[idx], pos = 4)
+    idx <- idx + 1
+  }
+}
+
+for(i in 0:13){
+  segments(i, 0, i, 13)
+  segments(0, i, 13, i)
+}
+
+(results_villain %>% arrange(Avg.Chips.Won))[1:5,]
+(results_villain %>% arrange(desc(Avg.Chips.Won)))[1:5,]
+```
+
+
+
+
